@@ -1,0 +1,145 @@
+---
+title: "Human activity recognition research"
+author: "Brenda Grondman"
+date: "Sunday, January 31, 2016"
+output: html_document
+---
+
+## Executive summary
+This human activity recongition research focusses on "how (well)" an activity was performed by the wearer. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). We used this data to predict the manner in which they did the exercise. 
+
+After preparing the data, we have build several machine learning models. Based on accuracy, the random forest performs best, follewed by bagging and boosting models. We aimed to combine the predictions of these models, but the predictions were the same for each test case. 
+
+##### Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3x7VHKFJ3
+
+## Data preparation
+
+To perform the machine learning techniques, we first cleaned and prepared the data. We partitioned the dataset in a training (60%) and testing set (40%) to perform cross validation. The data preparation consists of deleting name, time and date components and deleting columns with missing data. 
+```{r selecion model, results='hide',warning=FALSE,message=FALSE,echo=FALSE,error=FALSE}
+library(caret); library(kernlab); library(gbm)
+setwd("C:/Users/Brenda/Documents/Coursera/PracticalMachineLearning")
+Movement <- read.csv("pml-training.csv", stringsAsFactors = TRUE)
+Intrain <- createDataPartition(y=Movement$classe, p=0.6, list=FALSE)
+train <- Movement[Intrain,-c(1:7)]#X variabele deleten
+test <- Movement[-Intrain,-c(1:7)]#X variabele deleten
+testfinal <- read.csv("pml-testing.csv", stringsAsFactors = TRUE)
+testfinal <- testfinal[,-c(1:7)]#X variabele deleten
+train <- train[,colSums(is.na(train)) <= 1000] 
+train <- train[,colSums((train=="")) <= 1000] 
+test <- test[,colSums(is.na(test)) <= 1000] 
+test <- test[,colSums((test=="")) <= 1000] 
+testfinal <- testfinal[,colSums(is.na(testfinal)) <= 5] 
+```
+
+## Building models
+The following machine learning algorithms with cross validation techniques are build to predict the manner:  
+1. Classifaction tree  
+2. Random Forest  
+3. Bagging  
+4. Boosting  
+
+#### 1. Classifaction tree  
+
+Lets us build a classification tree and cross validate the model. 
+
+```{r tree model,message=FALSE, warning=FALSE,echo=FALSE}
+set.seed(22519) # For reproducibile purpose
+#modelTree <- train(classe ~., data =train, method="rpart")
+#save(modelTree,file="modelTree.RData")
+load("modelTree.RData")
+library(rattle)
+predictTree <- predict(modelTree, newdata=test)
+cmTree <- confusionMatrix(predictTree, test$classe); 
+```
+
+```{r show tree model}
+#modelTree <- train(classe ~., data =train, method="rpart")
+predictTree <- predict(modelTree, newdata=test)
+cmTree <- confusionMatrix(predictTree, test$classe); cmTree$overall['Accuracy']
+```  
+The out of sample accuracy and error can be calculated using a test set. The accuracy and error on the test set, using the model which is build on the training set, is called the out of sample accuracy and error.  
+The classification tree model we fit has an out of sample accurancy of `r round(cmTree$overall['Accuracy'],3)`. The out of sample error is 1 - `r round(cmTree$overall['Accuracy'],3)` = `r round(1 - cmTree$overall['Accuracy'],3)`. Lets investigate if other models will improve the accuracy. 
+
+#### 2. Bagging
+Lets us build a bagging model and cross validate the model. 
+
+```{r bagging model,warning=FALSE,message=FALSE, echo=FALSE}
+set.seed(22519) # For reproducibile purpose
+#modelBagging <- train(classe ~ .,data=train,method="treebag")
+#save(modelBagging,file="modelBagging.RData")
+load("modelBagging.RData")
+predBagging <- predict(modelBagging, test)
+cmBagging <- confusionMatrix(predBagging, test$classe)
+```
+
+```{r show bagging model}
+#modelBagging <- train(classe ~ .,data=train,method="treebag")
+predBagging <- predict(modelBagging, test)
+cmBagging <- confusionMatrix(predBagging, test$classe); cmBagging$overall['Accuracy']
+```  
+
+The cross validation shows that the bagging model has an out of sample accurancy of `r round(cmBagging$overall['Accuracy'],3)`. The out of sample error is 1 - `r round(cmBagging$overall['Accuracy'],3)` = `r round(1- cmBagging$overall['Accuracy'],3)`. We will build other models to improve the accuracy. 
+
+#### 3. Random Forest
+Lets try to build a random forest model.
+
+```{r random model, warning=FALSE,message=FALSE,echo=FALSE}
+set.seed(22519) # For reproducibile purpose
+#modelRf <- train(classe ~ ., data=train, method="rf", importance = TRUE)
+#save(modelRf,file="modelRf.RData")
+load("modelRf.RData")
+predictRf <- predict(modelRf, test)
+cmRf <- confusionMatrix(predictRf, test$classe)
+```
+
+```{r show rf model}
+#modelRf <- train(classe ~ ., data=train, method="rf", importance = TRUE)
+predictRf <- predict(modelRf, test)
+cmRf <- confusionMatrix(predictRf, test$classe); cmRf$overall['Accuracy']
+``` 
+
+The random forest model we fit has an out of sample accurancy of `r round(cmRf$overall['Accuracy'],3)`. The out of sample error is 1 - `r round(cmRf$overall['Accuracy'],3)` = `r round(1- cmRf$overall['Accuracy'],3)`. This error is the smallest we have so far.
+
+```{r varimplot, fig.height=6, fig.width=10}
+varImpPlot(modelRf$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 1, 
+    main = "Importance of the Individual variables")
+```  
+At the top of the y axis are the most important variables for the random forest model, these variables are most valuable in terms of being able to classify the observed training data. At the bottom of the y axis are the least important variables shown. 
+
+#### 4. Boosting
+
+Finally, lets check if a boosting model can improve our accuracy even further. 
+
+```{r boosing model, message=FALSE,echo=FALSE}
+set.seed(22519) # For reproducibile purpose
+#modelBoosting <- train(classe ~ ., method = "gbm", data = train, verbose = F, 
+#trControl = trainControl(method = "cv", number = 3))
+#save(modelBoosting,file="modelBoosting.RData")
+load("modelBoosting.RData")
+predBoosting <- predict(modelBoosting, test)
+cmBoosting <- confusionMatrix(predBoosting, test$classe)
+```
+
+```{r show boosting model}
+#modelBoosting <- train(classe ~ ., method = "gbm", data = train, verbose = F, 
+predBoosting <- predict(modelBoosting, test)
+cmBoosting <- confusionMatrix(predBoosting, test$classe); cmBoosting$overall['Accuracy']
+``` 
+This model has an out of sample accurancy of `r round(cmBoosting$overall['Accuracy'],3)`. The out of sample error is 1 - `r round(cmBoosting$overall['Accuracy'],3)` = `r round(1- cmBoosting$overall['Accuracy'],3)`.
+
+## Combining models for best prediction accuracy
+We compare the models and combine the results to maximize with prediction accuracy.
+```{r results, message=FALSE,echo=FALSE}
+Results <- data.frame(cmTree$overall, cmBagging$overall, cmRf$overall, 
+cmBoosting$overall)
+round(Results[c(1,3,4),],3)
+predBagging <- as.vector(predict(modelBagging, newdata=testfinal))
+predBoosting <- as.vector(predict(modelBoosting, newdata=testfinal))
+predRf <- as.vector(predict(modelRf, newdata=testfinal))
+```
+
+Looking at the prediction accuracy we notice that the random forest has the highest accuracy. It is possible to improve the accuracy even further by combining the predictions of the models. Let us take a look at the predictions. 
+```{r show}
+predictions <- rbind(predBagging, predBoosting, predRf); predictions
+```
+Since the predictions for the test cases are the same for all three models, we don't combine the models, but just use these predictions. 
